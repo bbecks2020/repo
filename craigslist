@@ -9,6 +9,13 @@ from random import randint  # avoid throttling by not sending too many requests 
 This will take user input to run a craigslist search.  
 the results will be de-duped and written to a csv file.
 
+Grading Criteria
+Include a function that takes at least two user arguments from the command line
+Contain at least one if/else statement
+Perform a calculation on a list
+Output something (write) to a file, using string formatting
+Read in and Process a file
+
 Build Opportunities:
 - add another website (ie Trulia), API calls available.
 - instead of multiple lists per post, create one dict per post.
@@ -142,3 +149,4 @@ if __name__ == "__main__":
     city, zipcode, distance_from_zipcode, price_max, bedrooms_min, bathrooms_min, url = user_input()
     first = each_post(url1=url)
     csv_action(first)
+
