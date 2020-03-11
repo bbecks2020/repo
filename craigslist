@@ -3,135 +3,142 @@ from bs4 import BeautifulSoup
 import numpy as np
 import csv
 from time import sleep
-from random import randint #avoid throttling by not sending too many requests one after the other
+from random import randint  # avoid throttling by not sending too many requests one after the other
 
 """"
 This will take user input to run a craigslist search.  
 the results will be de-duped and written to a csv file.
 
-Build Opportunities
-- add another website (ie Trulia)
+Build Opportunities:
+- add another website (ie Trulia), API calls available.
+- instead of multiple lists per post, create one dict per post.
 - further data clean up in csv file
 - (for seattle) identify light rail stops per zip code. add a column to csv to give an estimate for how 
     for away the craigslist house may be from the light rail stops.
 """
-#user input
-city = input("City?").lower()
-zipcode = input("Zipcode?")
-distance_from_zipdcode = input("distance from zip? (miles)")
-price_max = input("Price Max?")
-bedrooms_min = input("bedrooms min?")
-bathrooms_min = input("bathrooms min?")
-url = "https://seattle.craigslist.org/search/apa?search_distance=" + \
-      str(distance_from_zipdcode) + \
-      "&postal=" + str(zipcode) + \
-      "&max_price=" + str(price_max) + \
-      "&min_bedrooms=" + str(bedrooms_min) + \
-      "&min_bathrooms=" + str(bathrooms_min) + \
-      "&availabilityMode=0&sale_date=all+dates"
 
-print("\nRunning Craigslist search now...")
+
+# user input
+def user_input():
+    city = input("City?").lower()
+    zipcode = input("Zipcode?")
+    distance_from_zipcode = input("distance from zip? (miles)")
+    price_max = input("Price Max?")
+    bedrooms_min = input("bedrooms min?")
+    bathrooms_min = input("bathrooms min?")
+    url = "https://seattle.craigslist.org/search/apa?search_distance=" + \
+          str(distance_from_zipcode) + \
+          "&postal=" + str(zipcode) + \
+          "&max_price=" + str(price_max) + \
+          "&min_bedrooms=" + str(bedrooms_min) + \
+          "&min_bathrooms=" + str(bathrooms_min) + \
+          "&availabilityMode=0&sale_date=all+dates"
+    print("\nRunning Craigslist search now...")
+    return city, zipcode, distance_from_zipcode, price_max, bedrooms_min, bathrooms_min, url
+
 
 # testing..
-# url = "https://seattle.craigslist.org/
-# search/apa?hasPic=1&search_distance=5&
-# postal=98106&max_price=3000&min_bedrooms=3&
-# availabilityMode=0&sale_date=all+dates"
+    # url = "https://seattle.craigslist.org/search/apa?hasPic=1&search_
+    # distance=5&postal=98106&max_price=3000&min_bedrooms=3&availabilityMode=0&sale_date=all+dates"
 
-response = get(url)
-soup = BeautifulSoup(response.text, 'html.parser')
+def each_post(url1):
+    response = get(url1)
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-#total results on the page
-results = soup.find('div', class_='search-legend')
-results_total = int(results.find('span', class_='totalcount').text)
+    # total results on the page
+    results = soup.find('div', class_='search-legend')
+    results_total = int(results.find('span', class_='totalcount').text)
 
-#use numpy to calculate
-# .arrange(start, variable+1, incremental increase of 120)
-pages = np.arange(0, results_total+1, 120)
+    # use numpy to calculate
+    # .arrange(start, variable+1, incremental increase of 120)
+    pages = np.arange(0, results_total + 1, 120)
+
+    # get everything you need form one post, and then loop through html to go to the next posting.
+
+    count = 0
+
+    post_createdate = []
+    neighborhood = []
+    post_titleline = []
+    bedrooms = []
+    urls = []
+    prices = []
+
+    for page in pages:
+
+        response = get("https://seattle.craigslist.org/search/apa?s=" + str(page) + "&availabilityMode=0&hasPic=1")
+
+        sleep(randint(1, 5))  # keeps 'em guessing
+
+        # throw warning for status codes that are not 200
+        if response.status_code != 200:
+            warn('Request: {}; Status code: {}'.format(requests, response.status_code))
+
+        # define the html text
+        soups = BeautifulSoup(response.text, 'html.parser')
+
+        # define the posts - results-row is where html for each post lives.
+        each_post = soup.find_all('li', class_='result-row')
+
+        # take everything you need from one post, then loop to the next one!
+        for post in each_post:
+
+            if post.find('span', class_='result-hood') is not None:
+                # posting date
+                post_dates = post.find('time', class_='result-date')['datetime']
+                post_createdate.append(post_dates)
+
+                # neighborhoods
+                area = post.find('span', class_='result-hood').text
+                neighborhood.append(area)
+
+                # title text
+                post_title = post.find('a', class_='result-title hdrlnk')
+                post_title_text = post_title.text
+                post_titleline.append(post_title_text)
+
+                # post link
+                post_link = post_title[ 'href' ]
+                urls.append(post_link)
+
+                # strip whitespace, replace $ with noting. cast as integer
+                post_price = post.a.text.strip().replace("$", "")
+                prices.append(post_price)
+
+                # pull text (first elemental position) out of span, remove the text, split words if there are.
+                bedroom_count = post.find('span', class_='housing').text.replace("br", "").split()[ 0 ]
+                bedrooms.append(bedroom_count)
+
+        count += 1
+        print("Page " + str(count) + " complete")
+
+    print("all pages in that search query have been scraped")
+    print("writing a csv file ...")
+
+    results = list(zip(post_createdate, neighborhood, prices, post_titleline, bedrooms, urls))
+    return results
 
 
-#get everything you need form one post, and then loop through html to go to the next posting.
+def csv_action(results):
+    with open("craigslisthousehunting.csv", "w", newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([ 'dates', 'area', 'price', 'title', 'bedrooms', 'url' ])
+        writer.writerows(results)
+        print("de-duping csv...")
 
-count = 0
+    with open('craigslisthousehunting.csv', 'r') as in_file, open('craigslisthousehunting_dedupe.csv', 'w') as out_file:
+        seen = set()  # set for fast O(1) amortized lookup
+        for line in in_file:
+            if line in seen:
+                continue  # skip duplicate
+            seen.add(line)
+            out_file.write(line)
+        print("two files have been created:\n"
+              "\tcraigslisthousehunting.csv\n"
+              "\tcraigslisthousehunting_dedupe.csv")
 
-post_createdate = []
-neighborhood = []
-post_titleline = []
-bedrooms = []
-urls = []
-prices = []
 
-for page in pages:
-
-    # get request
-    response = get("https://sfbay.craigslist.org/search/eby/apt?"
-                   + "s="  # the parameter for defining the page number
-                   + str(page)  # the page number in the pages array from earlier
-                   + "&hasPic=1"
-                   + "&availabilityMode=0")
-
-    sleep(randint(1, 5))
-
-    # throw warning for status codes that are not 200
-    if response.status_code != 200:
-        warn('Request: {}; Status code: {}'.format(requests, response.status_code))
-
-    # define the html text
-    soups = BeautifulSoup(response.text, 'html.parser')
-
-    # define the posts - results-row is where html for each post lives.
-    each_post = soup.find_all('li', class_='result-row')
-
-    # take everything you need from one post, then loop to the next one!
-    for post in each_post:
-
-        if post.find('span', class_='result-hood') is not None:
-
-            # posting date
-            post_dates = post.find('time', class_='result-date')['datetime']
-            post_createdate.append(post_dates)
-
-            # neighborhoods
-            area = post.find('span', class_='result-hood').text
-            neighborhood.append(area)
-
-            # title text
-            post_title = post.find('a', class_='result-title hdrlnk')
-            post_title_text = post_title.text
-            post_titleline.append(post_title_text)
-
-            # post link
-            post_link = post_title[ 'href' ]
-            urls.append(post_link)
-
-            # strip whitespace, replace $ with noting. cast as integer
-            post_price = post.a.text.strip().replace("$", "")
-            prices.append(post_price)
-
-            # pull text (first elemental position) out of span, remove the text, split words if there are.
-            bedroom_count = post.find('span', class_='housing').text.replace("br", "").split()[0]
-            bedrooms.append(bedroom_count)
-
-    count += 1
-    print("Page " + str(count) + " complete")
-
-print("all pages in that search query have been scraped")
-print("writing a csv file ...")
-
-results = list(zip(post_createdate, neighborhood, prices, post_titleline, bedrooms, urls))
-with open("craigslisthousehunting.csv", "w", newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(['dates', 'area', 'price', 'title', 'bedrooms', 'url'])
-    writer.writerows(results)
-    print("de-duping csv...")
-
-with open('craigslisthousehunting.csv','r') as in_file, open('craigslisthousehunting_dedupe.csv','w') as out_file:
-    seen = set() # set for fast O(1) amortized lookup
-    for line in in_file:
-        if line in seen:
-            continue # skip duplicate
-        seen.add(line)
-        out_file.write(line)
-    print("two files have been created:\n"
-          "\tcraigslisthousehunting.csv\n"
-          "\tcraigslisthousehunting_dedupe.csv")
+if __name__ == "__main__":
+    city, zipcode, distance_from_zipcode, price_max, bedrooms_min, bathrooms_min, url = user_input()
+    first = each_post(url1=url)
+    csv_action(first)
